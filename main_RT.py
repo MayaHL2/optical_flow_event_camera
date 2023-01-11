@@ -60,14 +60,43 @@ def PCA(x):
     _, eig_vec = np.linalg.eig(cov)
     return eig_vec
 
+def find_neighborhood(data, nbh_size, t_optical_flow):
+    # The data for which we are looking for is the middle of the data array
+    i = data.shape[0]//2
+    # The neighborhood is within an ellipsoide 
+    d = (data[:, 0] - data[i, 0])**2 + (data[:, 1] - data[i, 1])**2 + (data[:, 3] - data[i, 3])**2 < np.floor(nbh_size/2)*np.floor(nbh_size/2)*2 + t_optical_flow**2
+    nbh = data[d]
+    return nbh[:, np.array([0, 1, 3])]
+
+def filter_outliers(nbh, n, eps = 0.1, eps_n = 10**(-3)):
+    d = -np.sum(n*nbh, axis = 1)
+    t_est = - (np.sum(nbh[:, :2]*n[:2], axis = 1) + d)/(n[2] + eps_n)
+    nbh[t_est > (1-eps)*nbh.shape[0]**2/2]
+    return nbh
+
+def calculate_optical_flow(nbh):
+    # Find the eigen vectors
+    eig_vec = PCA(nbh)
+    # The smallest eigen vector is the normal vector to the plane
+    n = eig_vec[2] 
+    # Filter outliers
+    nbh = filter_outliers(nbh, n, eps = 10**(-3))
+    # Change sign of n if the support time is negative
+    if n[2] < 0:
+        n = -n
+    temp = -n[2]/(n[0]*n[0] + n[1]*n[1] + eps)
+    # Calculate vx, vy and support time
+    vx = temp*n[0]
+    vy = temp*n[1]
+    support_time = (n[0]*n[0] + n[1]*n[1])/(n[2] + eps)
+    return vx, vy, support_time
+
 annots = loadmat('data/stripes.mat')
 data = annots['events']
 
-start = time.time()
-
 data_chunk = []
 last_data_time = 0
-T_delay = 30
+T_delay = 200
 
 T_support_max = T_delay
 T_support_min = 0
@@ -79,26 +108,64 @@ Te_min, Te_max = find_min_max_time(data)
 fe_min, fe_max = 1/Te_max, 1/Te_min
 alpha_min, alpha_max = k/(np.log(fe_max + eps)), k/np.log(fe_min)
 
+nbh_size = 7
+optical_flow = []
+
+time_op = 0
+
 
 for i in range(data.shape[0]):
     if not(data[i, 3] - last_data_time > T_delay) :
             data_chunk.append(data[i, :])
             # size_chunk = len(data_chunk) + 1 
     else: 
+        start = time.time()
+
         data_chunk.append(data[i, :])
         data_chunk_np = np.array(data_chunk)
         
         data_chunk_np = refractory_filter(data_chunk_np, [20, 1])
 
-        if data_chunk_np[-1, 3] > 100:
-            fe = 1/(data_chunk_np[-1, 3] - data_chunk_np[-2, 3] + eps)
+        if data_chunk_np[-1, 3] - data_chunk_np[0, 3] > T_support_max:
+            fe = 1/(data_chunk_np[-1, 3] - data_chunk_np[-2, 3] + 1) # J'ai ajouté le +1 pour éviter les divisions par 0 (au lieu de mettre un eps)
             alpha = k/np.log(fe + eps)
             T_support = (T_support_max - T_support_min)/(alpha_max - alpha_min)*(alpha - alpha_min) + T_support_min
-            print(T_support)
             data_chunk_np = support_time_filter(data_chunk_np, T_support)
-        # print(data_chunk_np.shape)
+
+        vx_prev = 0
+        vy_prev = 0
+        support_time_prev = 0
+        for nbh_size in [7, 9, 11]:
+            # find neighborhood
+            nbh = find_neighborhood(data_chunk_np, nbh_size, T_delay)
+            # print(nbh.shape[0])
+            # calculate optical flow
+            if nbh.shape[0] >= 3:
+                vx_cur, vy_cur, support_time_cur = calculate_optical_flow(nbh)
+                vx = (vx_cur + vx_prev)/2
+                vy = (vy_cur + vy_prev)/2
+                support_time = (support_time_cur + support_time_prev)/2
+
+                print("curr", vx_cur, vy_cur, support_time_cur)
+
+                vx_prev = vx_cur
+                vy_prev = vy_cur
+                support_time_prev = support_time_cur
+
+        optical_flow.append([data_chunk_np[data_chunk_np.shape[0]//2, :], vx, vy, support_time])
+        print(vx, vy, support_time)
+        # vx_cur and vx are the same
+        # because T_delay influences way more the data
 
         last_data_time = data_chunk_np[0, 3]
 
         data_chunk = data_chunk_np.tolist()
         data_chunk.pop(0)
+
+        time_op = (time_op + time.time() - start)/2
+
+
+print(time_op)
+optical_flow = np.array(optical_flow)
+print(optical_flow.shape)
+display_data3D(data, stop = optical_flow.shape[0], optical_flow = optical_flow[:, 1:])
