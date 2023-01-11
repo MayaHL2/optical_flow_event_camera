@@ -64,7 +64,8 @@ def find_neighborhood(data, nbh_size, t_optical_flow):
     # The data for which we are looking for is the middle of the data array
     i = data.shape[0]//2
     # The neighborhood is within an ellipsoide 
-    d = (data[:, 0] - data[i, 0])**2 + (data[:, 1] - data[i, 1])**2 + (data[:, 3] - data[i, 3])**2 < np.floor(nbh_size/2)*np.floor(nbh_size/2)*2 + t_optical_flow**2
+    d = (data[:, 0] - data[i, 0])**2 + (data[:, 1] - data[i, 1])**2 < np.floor(nbh_size/2)*np.floor(nbh_size/2)*2
+    d = np.logical_and((data[:, 3] - data[i, 3]) < t_optical_flow, d)
     nbh = data[d]
     return nbh[:, np.array([0, 1, 3])]
 
@@ -135,6 +136,10 @@ for i in range(data.shape[0]):
         vx_prev = 0
         vy_prev = 0
         support_time_prev = 0
+
+        vx = 0
+        vy = 0
+        support_time = 0
         for nbh_size in [7, 9, 11]:
             # find neighborhood
             nbh = find_neighborhood(data_chunk_np, nbh_size, T_delay)
