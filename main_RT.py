@@ -35,11 +35,11 @@ def refractory_filter(data, T_ref):
 # find the highest and lowest time diffrence bewteen two events
 def find_min_max_time(events):
     N = len(events)
-    min_time = float('inf')
-    max_time = float('-inf')
+    min_time = 1000
+    max_time = 0
     for i in range(1, N):
-        time_diff = events[i, 3] - events[i-1, 3]
-        if time_diff < min_time and time_diff>0:
+        time_diff = np.abs(events[i, 3] - events[i-1, 3])
+        if time_diff < min_time and time_diff > 1:
             min_time = time_diff
         if time_diff > max_time:
             max_time = time_diff
@@ -94,6 +94,7 @@ def calculate_optical_flow(nbh):
 
 annots = loadmat('data/stripes.mat')
 data = annots['events']
+data = data[:2000, :]
 
 data_chunk = []
 last_data_time = 0
@@ -108,8 +109,10 @@ eps = 10**(-3)
 Te_min, Te_max = find_min_max_time(data)
 fe_min, fe_max = 1/Te_max, 1/Te_min
 alpha_min, alpha_max = k/(np.log(fe_max + eps)), k/np.log(fe_min)
+# print(np.log(fe_max + eps), np.log(fe_min))
+# print(alpha_min, alpha_max)
 
-nbh_size = 7
+# nbh_size = 7
 optical_flow = []
 
 time_op = 0
@@ -131,6 +134,7 @@ for i in range(data.shape[0]):
             fe = 1/(data_chunk_np[-1, 3] - data_chunk_np[-2, 3] + 1) # J'ai ajouté le +1 pour éviter les divisions par 0 (au lieu de mettre un eps)
             alpha = k/np.log(fe + eps)
             T_support = (T_support_max - T_support_min)/(alpha_max - alpha_min)*(alpha - alpha_min) + T_support_min
+            if T_support< 0 : print(T_support)
             data_chunk_np = support_time_filter(data_chunk_np, T_support)
 
         vx_prev = 0
@@ -151,14 +155,14 @@ for i in range(data.shape[0]):
                 vy = (vy_cur + vy_prev)/2
                 support_time = (support_time_cur + support_time_prev)/2
 
-                print("curr", vx_cur, vy_cur, support_time_cur)
+                # print("curr", vx_cur, vy_cur, support_time_cur)
 
                 vx_prev = vx_cur
                 vy_prev = vy_cur
                 support_time_prev = support_time_cur
 
         optical_flow.append([data_chunk_np[data_chunk_np.shape[0]//2, :], vx, vy, support_time])
-        print(vx, vy, support_time)
+        # print(vx, vy, support_time)
         # vx_cur and vx are the same
         # because T_delay influences way more the data
 
