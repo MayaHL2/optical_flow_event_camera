@@ -2,14 +2,15 @@ import numpy as np
 import matplotlib.pyplot as plt
 import time
 from scipy.io import loadmat
+from random import choices
 
 # Function to display data 
 def display_data3D(data, start = 0, stop = 500, optical_flow = None):
     ax = plt.axes(projection='3d')
     data_p = data[data[:, 2] > 0]
     data_n = data[data[:, 2] < 0]
-    ax.scatter3D(data_p[start:stop, 0], data_p[start:stop, 1], data_p[start:stop, 3], 'blue')
-    ax.scatter3D(data_n[start:stop, 0], data_n[start:stop, 1], data_n[start:stop, 3], 'red')
+    # ax.scatter3D(data_p[start:stop, 0], data_p[start:stop, 1], data_p[start:stop, 3], 'blue')
+    # ax.scatter3D(data_n[start:stop, 0], data_n[start:stop, 1], data_n[start:stop, 3], 'red')
     if np.all(optical_flow != None):
         ax.quiver(data[start:stop, 0], data[start:stop, 1], data[start:stop, 3], optical_flow[start:stop, 0], optical_flow[start:stop, 1], optical_flow[start:stop, 2], length = 10, normalize = True)
     plt.show()
@@ -53,12 +54,44 @@ def support_time_filter(data, neighboor_size):
         data_filtered[-1, :] = [0, 0, 0, 0]
     return np.delete(data_filtered, data_filtered[:, 2] == 0, axis= 0)
 
-# PCA algorithm
-def PCA(x):
-    x = x - np.mean(x, axis=0)
-    cov = np.cov(x, rowvar=False)
-    _, eig_vec = np.linalg.eig(cov)
-    return eig_vec
+def linear_regression(X, y , l_regularization = 0):
+  return np.dot(np.dot(np.linalg.inv(np.dot(X.T, X) + l_regularization*np.eye(X.shape[1])), X.T), y)
+
+def gradient_descent(X, y, theta_0, alpha = 0.1, nbr_it = 10, l_regularization = 0):
+  theta = theta_0
+  for i in range(nbr_it):
+    theta += alpha*1/(X.shape[0])*(np.dot(X.T,(y - np.dot(theta, X.T)))  + l_regularization*np.linalg.norm(theta))
+  return theta
+
+# Fit plane in 3D using RANSAC
+def ransac(data, min_pts, in_over_out_ref, tol_err, method = "linear regression"):
+    n_samples = data.shape[0]
+
+    i_in = choices(range(n_samples), k = min_pts)
+    x_i = data[:, 0][i_in]
+    y_i = data[:, 1][i_in]
+    t_i = data[:, 3][i_in]
+
+    X_i = np.concatenate((x_i.reshape(-1, 1), y_i.reshape(-1, 1)), axis = 1)
+
+    in_over_out = min_pts/n_samples
+
+    while in_over_out < in_over_out_ref:
+
+        if method == "linear regression":
+            theta_ransac = linear_regression(X_i, t_i)
+        elif method == "gradient descent":
+            theta_ransac = gradient_descent(X_i, t_i, np.zeros(X_i.shape))
+
+        inliers = np.abs(t_i - np.dot(theta_ransac, data[:, :2].T)) < tol_err
+        x_i = data[:, 0][inliers]
+        y_i = data[:, 1][inliers]
+        t_i = data[:, 3][inliers]
+
+        in_over_out = t_i.shape[0]/n_samples
+
+    return theta_ransac, X_i, y_i
+
 
 def find_neighborhood(data, nbh_size, t_optical_flow):
     # The data for which we are looking for is the middle of the data array
@@ -75,11 +108,21 @@ def filter_outliers(nbh, n, eps = 0.1, eps_n = 10**(-3)):
     nbh[t_est > (1-eps)*nbh.shape[0]**2/2]
     return nbh
 
+# PCA algorithm
+def PCA(x):
+    x = x - np.mean(x, axis=0)
+    print(x)
+    cov = np.cov(x, rowvar=False)
+    eig_val, eig_vec = np.linalg.eig(cov)
+    return eig_vec[np.argmin(eig_val)]
+
 def calculate_optical_flow(nbh):
     # Find the eigen vectors
     eig_vec = PCA(nbh)
+    # print(eig_vec)
+    # print(eig_vec)
     # The smallest eigen vector is the normal vector to the plane
-    n = eig_vec[2] 
+    n = eig_vec
     # Filter outliers
     nbh = filter_outliers(nbh, n, eps = 10**(-3))
     # Change sign of n if the support time is negative
@@ -94,11 +137,12 @@ def calculate_optical_flow(nbh):
 
 annots = loadmat('data/stripes.mat')
 data = annots['events']
+data[:, 3] = (data[:, 3]/10**(1)).astype(float)
 data = data[:2000, :]
 
 data_chunk = []
 last_data_time = 0
-T_delay = 200
+T_delay = 30.00
 
 T_support_max = T_delay
 T_support_min = 0
@@ -117,6 +161,9 @@ optical_flow = []
 
 time_op = 0
 
+count_out = 0
+count_in = 0
+
 
 for i in range(data.shape[0]):
     if not(data[i, 3] - last_data_time > T_delay) :
@@ -128,43 +175,38 @@ for i in range(data.shape[0]):
         data_chunk.append(data[i, :])
         data_chunk_np = np.array(data_chunk)
         
-        data_chunk_np = refractory_filter(data_chunk_np, [20, 1])
+        data_chunk_np = refractory_filter(data_chunk_np, [2.0, 0.1])
 
         if data_chunk_np[-1, 3] - data_chunk_np[0, 3] > T_support_max:
-            fe = 1/(data_chunk_np[-1, 3] - data_chunk_np[-2, 3] + 1) # J'ai ajouté le +1 pour éviter les divisions par 0 (au lieu de mettre un eps)
+            fe = 1/(data_chunk_np[-1, 3] - data_chunk_np[-2, 3] + 0.1) # J'ai ajouté le +1 pour éviter les divisions par 0 (au lieu de mettre un eps)
             alpha = k/np.log(fe + eps)
             T_support = (T_support_max - T_support_min)/(alpha_max - alpha_min)*(alpha - alpha_min) + T_support_min
-            if T_support< 0 : print(T_support)
             data_chunk_np = support_time_filter(data_chunk_np, T_support)
 
-        vx_prev = 0
-        vy_prev = 0
-        support_time_prev = 0
 
-        vx = 0
-        vy = 0
-        support_time = 0
-        for nbh_size in [7, 9, 11]:
+        vx_list = []
+        vy_list = []
+        support_time_list = []
+
+        count_out += 1
+        for nbh_size in [11, 13, 15]:            
             # find neighborhood
             nbh = find_neighborhood(data_chunk_np, nbh_size, T_delay)
-            # print(nbh.shape[0])
+            #print(nbh.shape[0])
             # calculate optical flow
             if nbh.shape[0] >= 3:
+                count_in += 1
                 vx_cur, vy_cur, support_time_cur = calculate_optical_flow(nbh)
-                vx = (vx_cur + vx_prev)/2
-                vy = (vy_cur + vy_prev)/2
-                support_time = (support_time_cur + support_time_prev)/2
 
-                # print("curr", vx_cur, vy_cur, support_time_cur)
+                vx_list.append(vx_cur)
+                vy_list.append(vy_cur)
+                support_time_list.append(support_time_cur)
 
-                vx_prev = vx_cur
-                vy_prev = vy_cur
-                support_time_prev = support_time_cur
 
+        vx = np.median(vx_list)
+        vy = np.median(vy_list)
+        support_time = np.median(support_time_list)
         optical_flow.append([data_chunk_np[data_chunk_np.shape[0]//2, :], vx, vy, support_time])
-        # print(vx, vy, support_time)
-        # vx_cur and vx are the same
-        # because T_delay influences way more the data
 
         last_data_time = data_chunk_np[0, 3]
 
@@ -174,7 +216,12 @@ for i in range(data.shape[0]):
         time_op = (time_op + time.time() - start)/2
 
 
-print(time_op)
+print(count_in, count_out)
 optical_flow = np.array(optical_flow)
-print(optical_flow.shape)
+print(optical_flow[optical_flow[:, 1] !=0].shape)
+print(optical_flow[optical_flow[:, 2] !=0].shape)
+print(optical_flow[optical_flow[:, 3] !=0].shape)
+
 display_data3D(data, stop = optical_flow.shape[0], optical_flow = optical_flow[:, 1:])
+
+# ransac(data[:50, :], 10, 4/10, 0.1, method = "linear regression")
