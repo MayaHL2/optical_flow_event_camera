@@ -9,10 +9,19 @@ def display_data3D(data, start = 0, stop = 500, optical_flow = None):
     ax = plt.axes(projection='3d')
     data_p = data[data[:, 2] > 0]
     data_n = data[data[:, 2] < 0]
-    # ax.scatter3D(data_p[start:stop, 0], data_p[start:stop, 1], data_p[start:stop, 3], 'blue')
-    # ax.scatter3D(data_n[start:stop, 0], data_n[start:stop, 1], data_n[start:stop, 3], 'red')
+    ax.scatter3D(data_p[start:stop, 0], data_p[start:stop, 1], data_p[start:stop, 3], 'blue')
+    ax.scatter3D(data_n[start:stop, 0], data_n[start:stop, 1], data_n[start:stop, 3], 'red')
     if np.all(optical_flow != None):
         ax.quiver(data[start:stop, 0], data[start:stop, 1], data[start:stop, 3], optical_flow[start:stop, 0], optical_flow[start:stop, 1], optical_flow[start:stop, 2], length = 10, normalize = True)
+    plt.show()
+
+def display_support_time(T_support, line):
+    t_support = T_support[T_support[:, 1] == line]
+    print(t_support)
+    plt.scatter(t_support[:, 2], t_support[:, 0])
+    for i in range(t_support.shape[0]):
+        plt.plot([t_support[i, 2], t_support[i, 2] + t_support[i, 3]], [t_support[i, 0], t_support[i, 0]])
+    plt.grid()
     plt.show()
 
 def find_SAE(data, t, x_max, y_max):
@@ -54,11 +63,16 @@ def find_min_max_time(events):
             max_time = time_diff
     return min_time, max_time
 
-def support_time_filter(data, neighboor_size):
+def support_time_filter(data, neighboor_size, T_support):
     data_filtered = np.array(data)
     d = (data_filtered[:, 0] - data_filtered[-1, 0])**2 + (data_filtered[:, 1] - data_filtered[-1, 1])**2
-    index_filter = np.where(np.logical_and(d <= neighboor_size, d != 0))[0]
-    if len(index_filter) == 0:
+    index_nbh = np.logical_and(d <= neighboor_size, d != 0)
+    if np.any(index_nbh):
+        dT_recent = np.min(np.abs(data_filtered[index_nbh][:, 3] - data_filtered[-1, 3]))
+        print(dT_recent < T_support)
+    else: 
+        dT_recent = 0
+    if dT_recent > T_support:
         data_filtered[-1, :] = [0, 0, 0, 0]
     return np.delete(data_filtered, data_filtered[:, 2] == 0, axis= 0)
 
@@ -147,12 +161,12 @@ def calculate_optical_flow(nbh):
 
 annots = loadmat('data/stripes.mat')
 data = annots['events']
-data[:, 3] = (data[:, 3]).astype(float)
+# data[:, 3] = (data[:, 3]).astype(float)
 data = data[:2000, :]
 
 data_chunk = []
 last_data_time = 0
-T_delay = 300
+T_delay = 200
 
 T_support_max = T_delay
 T_support_min = 0
@@ -174,6 +188,8 @@ time_op = 0
 count_out = 0
 count_in = 0
 
+T_support_list = []
+
 
 for i in range(data.shape[0]):
     if not(data[i, 3] - last_data_time > T_delay) :
@@ -187,16 +203,16 @@ for i in range(data.shape[0]):
         
         data_chunk_np = refractory_filter(data_chunk_np, [20, 1])
 
-        if data_chunk_np[-1, 3] - data_chunk_np[0, 3] > T_support_max:
-            # if data_chunk_np[-1, 3] - data_chunk_np[-2, 3] == 0: 
-            #     fe = 1
-            # else: 
-            fe = 1/(data_chunk_np[-1, 3] - data_chunk_np[-2, 3] +1) # J'ai ajouté le +1 pour éviter les divisions par 0 (au lieu de mettre un eps)
+        
+        if data_chunk_np[-1, 3] - data_chunk_np[0, 3] > T_support_max + 20:
+            fe = 1/(data_chunk_np[-1, 3] - data_chunk_np[-2, 3] + 1.5) # J'ai ajouté le +1 pour éviter les divisions par 0 (au lieu de mettre un eps)
+            
             alpha = k/np.log(fe + eps)
+            
             T_support = (T_support_max - T_support_min)/(alpha_max - alpha_min)*(alpha - alpha_min) + T_support_min
-            print(T_support)
-            data_chunk_np = support_time_filter(data_chunk_np, T_support)
+            T_support_list.append([data_chunk_np[-1, 0], data_chunk_np[-1, 1], data_chunk_np[-1, 3], T_support])
 
+            data_chunk_np = support_time_filter(data_chunk_np, 2*np.sqrt(2), T_support)
 
         vx_list = []
         vy_list = []
@@ -229,13 +245,14 @@ for i in range(data.shape[0]):
 
         time_op = (time_op + time.time() - start)/2
 
-
-print(count_in, count_out)
+# print(T_support_list)
+display_support_time(np.array(T_support_list), 80)
+# print(count_in, count_out)
 optical_flow = np.array(optical_flow)
 print(optical_flow[optical_flow[:, 1] !=0].shape)
 print(optical_flow[optical_flow[:, 2] !=0].shape)
 print(optical_flow[optical_flow[:, 3] !=0].shape)
 
-display_data3D(data, stop = optical_flow.shape[0], optical_flow = optical_flow[:, 1:])
+# display_data3D(data, stop = optical_flow.shape[0], optical_flow = optical_flow[:, 1:])
 
 # ransac(data[:50, :], 10, 4/10, 1, method = "linear regression")
