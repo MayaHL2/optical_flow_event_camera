@@ -17,7 +17,6 @@ def display_data3D(data, start = 0, stop = 500, optical_flow = None):
 
 def display_support_time(T_support, line):
     t_support = T_support[T_support[:, 1] == line]
-    print(t_support)
     plt.scatter(t_support[:, 2], t_support[:, 0])
     for i in range(t_support.shape[0]):
         plt.plot([t_support[i, 2], t_support[i, 2] + t_support[i, 3]], [t_support[i, 0], t_support[i, 0]])
@@ -69,7 +68,6 @@ def support_time_filter(data, neighboor_size, T_support):
     index_nbh = np.logical_and(d <= neighboor_size, d != 0)
     if np.any(index_nbh):
         dT_recent = np.min(np.abs(data_filtered[index_nbh][:, 3] - data_filtered[-1, 3]))
-        print(dT_recent < T_support)
     else: 
         dT_recent = 0
     if dT_recent > T_support:
@@ -119,7 +117,6 @@ def ransac(data, min_pts, in_over_out_ref, tol_err, method = "linear regression"
 
     return theta_ransac, X_i, y_i
 
-
 def find_neighborhood(data, nbh_size, t_optical_flow):
     # The data for which we are looking for is the middle of the data array
     i = data.shape[0]//2
@@ -159,8 +156,9 @@ def calculate_optical_flow(nbh):
     support_time = (n[0]*n[0] + n[1]*n[1])/(n[2] + eps)
     return vx, vy, support_time
 
-annots = loadmat('data/stripes.mat')
-data = annots['events']
+annots = loadmat('synthetic_stripes.mat')
+data = annots['data']
+# data = annots['events']
 # data[:, 3] = (data[:, 3]).astype(float)
 data = data[:2000, :]
 
@@ -176,8 +174,11 @@ k = 1
 eps = 10**(-3)
 Te_min, Te_max = find_min_max_time(data)
 fe_min, fe_max = 1/Te_max, 1/Te_min
-alpha_min, alpha_max = k/(np.log(fe_max + eps)), k/np.log(fe_min)
-# print(np.log(fe_max + eps), np.log(fe_min))
+alpha_min, alpha_max = k/(np.log10(fe_max + eps)), k/np.log10(fe_min)
+
+alpha_min = 0.14*np.log(10)
+alpha_max = 0.3*np.log(10)
+# print(np.log10(fe_max + eps), np.log10(fe_min))
 # print(alpha_min, alpha_max)
 
 # nbh_size = 7
@@ -190,11 +191,11 @@ count_in = 0
 
 T_support_list = []
 
+fe = 0
 
 for i in range(data.shape[0]):
     if not(data[i, 3] - last_data_time > T_delay) :
-            data_chunk.append(data[i, :])
-            # size_chunk = len(data_chunk) + 1 
+        data_chunk.append(data[i, :])
     else: 
         start = time.time()
 
@@ -204,15 +205,23 @@ for i in range(data.shape[0]):
         data_chunk_np = refractory_filter(data_chunk_np, [20, 1])
 
         
-        if data_chunk_np[-1, 3] - data_chunk_np[0, 3] > T_support_max + 20:
-            fe = 1/(data_chunk_np[-1, 3] - data_chunk_np[-2, 3] + 1.5) # J'ai ajouté le +1 pour éviter les divisions par 0 (au lieu de mettre un eps)
+        if data_chunk_np[-1, 3] - data_chunk_np[0, 3] > T_support_max:
+            if data_chunk_np[-1, 3] - data_chunk_np[-2, 3] != 0:
+                fe_curr = 1/(data_chunk_np[-1, 3] - data_chunk_np[-2, 3])
+                fe = 0.2*fe + 0.8*fe_curr
+
+            if fe != 1:
+                alpha = k/np.log10(fe)
+
             
-            alpha = k/np.log(fe + eps)
-            
+            # if alpha > alpha_max : alpha_max, const_fe_max = alpha, fe
+            # if alpha < alpha_min : alpha_min, const_fe_min = alpha, fe
+
+                
             T_support = (T_support_max - T_support_min)/(alpha_max - alpha_min)*(alpha - alpha_min) + T_support_min
             T_support_list.append([data_chunk_np[-1, 0], data_chunk_np[-1, 1], data_chunk_np[-1, 3], T_support])
-
             data_chunk_np = support_time_filter(data_chunk_np, 2*np.sqrt(2), T_support)
+            
 
         vx_list = []
         vy_list = []
@@ -245,8 +254,10 @@ for i in range(data.shape[0]):
 
         time_op = (time_op + time.time() - start)/2
 
-# print(T_support_list)
-display_support_time(np.array(T_support_list), 80)
+
+print(alpha_max, alpha_min)
+print(T_support_list)
+display_support_time(np.array(T_support_list), 84)
 # print(count_in, count_out)
 optical_flow = np.array(optical_flow)
 print(optical_flow[optical_flow[:, 1] !=0].shape)
