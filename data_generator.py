@@ -29,11 +29,12 @@ for i in range(1, nbr_image):
 
 synthetic_events = np.zeros((0, 4))
 
-for i in range(1, nbr_image):
+# for i in range(1, nbr_image):
 
-    diff_image = synthetic_images[:, :, i] - synthetic_images[:, :, i-1]
-    changes = np.where(np.abs(diff_image) > delta_p)
-    new_synthetic_events = np.concatenate((changes[0].reshape(-1, 1), changes[1].reshape(-1, 1), np.sign(diff_image[changes]).reshape(-1, 1), i*delta_t*np.ones((changes[0].shape[0], 1))), axis = 1)
-    synthetic_events = np.concatenate((synthetic_events, new_synthetic_events), axis = 0)
+#     diff_image = synthetic_images[:, :, i] - synthetic_images[:, :, i-1]
+#     changes = np.where(np.abs(diff_image) > delta_p)
+#     new_synthetic_events = np.concatenate((changes[0].reshape(-1, 1), changes[1].reshape(-1, 1), np.sign(diff_image[changes]).reshape(-1, 1), i*delta_t*np.ones((changes[0].shape[0], 1))), axis = 1)
+#     synthetic_events = np.concatenate((synthetic_events, new_synthetic_events), axis = 0)
 
-savemat('synthetic_wall.mat', {'data': synthetic_events})
+# print(synthetic_events)
+# savemat('synthetic_stripes.mat', {'data': synthetic_events})

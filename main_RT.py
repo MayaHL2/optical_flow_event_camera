@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 import time
 from scipy.io import loadmat
 from random import choices
+import cv2
 
 # Function to display data 
 def display_data3D(data, start = 0, stop = 500, optical_flow = None):
@@ -16,7 +17,7 @@ def display_data3D(data, start = 0, stop = 500, optical_flow = None):
     plt.show()
 
 def display_support_time(T_support, line):
-    t_support = T_support[T_support[:, 1] == line]
+    t_support = T_support[T_support[:, 0] == line]
     plt.scatter(t_support[:, 2], t_support[:, 0])
     for i in range(t_support.shape[0]):
         plt.plot([t_support[i, 2], t_support[i, 2] + t_support[i, 3]], [t_support[i, 0], t_support[i, 0]])
@@ -156,15 +157,17 @@ def calculate_optical_flow(nbh):
     support_time = (n[0]*n[0] + n[1]*n[1])/(n[2] + eps)
     return vx, vy, support_time
 
-annots = loadmat('synthetic_stripes.mat')
+annots = loadmat('synthetic_square.mat')
 data = annots['data']
 # data = annots['events']
 # data[:, 3] = (data[:, 3]).astype(float)
-data = data[:2000, :]
+# data = data[:2000, :]
+
+print(data)
 
 data_chunk = []
 last_data_time = 0
-T_delay = 200
+T_delay = 20
 
 T_support_max = T_delay
 T_support_min = 0
@@ -193,9 +196,12 @@ T_support_list = []
 
 fe = 0
 
+
 for i in range(data.shape[0]):
     if not(data[i, 3] - last_data_time > T_delay) :
         data_chunk.append(data[i, :])
+        optical_flow.append([0, 0, 0])
+        
     else: 
         start = time.time()
 
@@ -204,7 +210,6 @@ for i in range(data.shape[0]):
         
         data_chunk_np = refractory_filter(data_chunk_np, [20, 1])
 
-        
         if data_chunk_np[-1, 3] - data_chunk_np[0, 3] > T_support_max:
             if data_chunk_np[-1, 3] - data_chunk_np[-2, 3] != 0:
                 fe_curr = 1/(data_chunk_np[-1, 3] - data_chunk_np[-2, 3])
@@ -214,8 +219,8 @@ for i in range(data.shape[0]):
                 alpha = k/np.log10(fe)
 
             
-            # if alpha > alpha_max : alpha_max, const_fe_max = alpha, fe
-            # if alpha < alpha_min : alpha_min, const_fe_min = alpha, fe
+            if alpha > alpha_max : alpha_max, const_fe_max = alpha, fe
+            if alpha < alpha_min : alpha_min, const_fe_min = alpha, fe
 
                 
             T_support = (T_support_max - T_support_min)/(alpha_max - alpha_min)*(alpha - alpha_min) + T_support_min
@@ -231,7 +236,9 @@ for i in range(data.shape[0]):
         for nbh_size in [11, 13, 15]:            
             # find neighborhood
             nbh = find_neighborhood(data_chunk_np, nbh_size, T_delay)
-            #print(nbh.shape[0])
+            # print(nbh)
+            # print()
+
             # calculate optical flow
             if nbh.shape[0] >= 3:
                 count_in += 1
@@ -241,11 +248,22 @@ for i in range(data.shape[0]):
                 vy_list.append(vy_cur)
                 support_time_list.append(support_time_cur)
 
+        
 
-        vx = np.median(vx_list)
-        vy = np.median(vy_list)
-        support_time = np.median(support_time_list)
-        optical_flow.append([data_chunk_np[data_chunk_np.shape[0]//2, :], vx, vy, support_time])
+                
+        if len(vx_list) == 0: vx = 0 
+        else: vx = np.median(vx_list)
+        if len(vy_list) == 0: vy = 0 
+        else: vy = np.median(vy_list)
+        if len(support_time_list) == 0: support_time = 0 
+        else: support_time = np.median(support_time_list)
+
+        # ax = plt.axes(projection='3d')
+        # ax.scatter(nbh[:, 0], nbh[:, 1], nbh[:, 2])
+        # ax.quiver(nbh[:, 0], nbh[:, 1], nbh[:, 2], vx_cur, vy_cur, support_time_cur, length = 1, normalize = True)
+        # plt.show()
+
+        optical_flow.append([vx, vy, support_time])
 
         last_data_time = data_chunk_np[0, 3]
 
@@ -255,15 +273,48 @@ for i in range(data.shape[0]):
         time_op = (time_op + time.time() - start)/2
 
 
-print(alpha_max, alpha_min)
-print(T_support_list)
-display_support_time(np.array(T_support_list), 84)
-# print(count_in, count_out)
-optical_flow = np.array(optical_flow)
-print(optical_flow[optical_flow[:, 1] !=0].shape)
-print(optical_flow[optical_flow[:, 2] !=0].shape)
-print(optical_flow[optical_flow[:, 3] !=0].shape)
+# print(alpha_max, alpha_min)
+T_support_list = np.column_stack((data[:, 0], data[:, 1], data[:, 3], np.array(optical_flow)[:,2]))
 
-# display_data3D(data, stop = optical_flow.shape[0], optical_flow = optical_flow[:, 1:])
 
+# find the most repeated value of T_support_list[:, 0] in T_support_list
+most_repeated = np.bincount(T_support_list[:, 3].astype(int)).argmax()
+
+print(count_in, count_out, count_in/count_out)
+
+# display_support_time(T_support_list, most_repeated)
+
+# print(optical_flow)
+# display_data3D(data, stop = 2000, optical_flow= np.array(optical_flow))
+
+image = 255*np.ones((512, 512, 3))
+for i in range(np.int16(np.max(data[:, 3]))):
+    data_t = data[data[:, 3] == i]
+    optical_flow_t = np.array(optical_flow)[data[:, 3] == i]
+    if data_t.shape[0] != 0:
+        for j in range(data_t.shape[0]):
+            cv2.circle(image, (np.int16(data_t[j, 1]*4), np.int16(data_t[j, 0]*4)), 1, (0, 255, 0), -1)
+            start_point = (np.int16(data_t[j, 1]*4), np.int16(data_t[j, 0]*4))
+            end_point = (np.int16(data_t[j, 1] + optical_flow_t[j, 1])*4, np.int16(data_t[j, 0] + optical_flow_t[j, 0])*4)
+            thickness = 2
+            tipLength = 0.1
+            cv2.arrowedLine(image, start_point, end_point, (255, 0, 0), thickness, tipLength=tipLength)
+
+        cv2.imshow("optical flow", image)
+        cv2.waitKey(100)
+    image = 255*np.ones((4*128, 4*128, 3))
+
+
+    # data_t = data[data[:, 3] == i]
+    # optical_flow_t = np.array(optical_flow)[data[:, 3] == i]
+    # if data_t.shape[0] != 0:
+    #     print(data_t[:, 0].shape, data_t[:, 1].shape)
+    #     plt.scatter(data_t[:, 0], data_t[:, 1])
+    #     if np.all(optical_flow != None):
+    #         print(data_t[:, 0], data_t[:, 1], optical_flow_t[:, 0], optical_flow_t[:, 1])
+    #         plt.quiver(data_t[:, 0], data_t[:, 1], optical_flow_t[:, 0], optical_flow_t[:, 1], scale = 1, scale_units = 'xy', color = 'r')
+    #     plt.grid()
+    #     plt.show()
+    #     plt.pause(0.1)
+    #     plt.close()
 # ransac(data[:50, :], 10, 4/10, 1, method = "linear regression")
