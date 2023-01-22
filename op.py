@@ -2,6 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.io import loadmat
 import cv2
+from math import floor
 
 def display_data3D(data, start = 0, stop = 500, optical_flow = None):
     ax = plt.axes(projection='3d')
@@ -13,13 +14,12 @@ def display_data3D(data, start = 0, stop = 500, optical_flow = None):
         ax.quiver(data[start:stop, 0], data[start:stop, 1], data[start:stop, 3], optical_flow[start:stop, 0], optical_flow[start:stop, 1], 0, length = 10, normalize = True)
     plt.show()
 
+annots = loadmat('data/synthetic_square.mat')
+data = annots['data']
 
-annots = loadmat('data/cropped_tv2.mat')
-data = annots['cropped']
+# data = data[:, np.array([0, 1, 3, 2])]
 
-data = data[:, np.array([0, 1, 3, 2])]
-
-data =  data[:10000, :]
+data =  data[:100002, :]
 
 # annots = loadmat('data/synthetic_square.mat')
 # data = annots['data']
@@ -55,6 +55,7 @@ ev = np.zeros((row, column, 2))
 # flow = np.zeros((np.int16(data[:, 1].max()) + 1, np.int16(data[:, 0].max()) + 1, 2, 3))
 
 optical_flow = []
+count = 0
 
 for i in range(N):
     value = 0
@@ -105,7 +106,7 @@ for i in range(N):
                     temp = -V[2]/(V[0]**2 + V[1]**2)
                     vx = V[0]*temp
                     vy = V[1]*temp
-                    print(vx, vy)
+                    # print(vx, vy)
                 else:
                     vx = 0
                     vy = 0
@@ -119,28 +120,39 @@ for i in range(N):
 
         value = 1
         optical_flow.append([vx, vy])
+        count += 1
 
     if value == 0:
         optical_flow.append([0, 0])
 
 optical_flow = np.array(optical_flow)
-print(data.shape, optical_flow.shape)
+optical_flow_norm = np.linalg.norm(optical_flow, axis = 1)
+optical_flow_norm[optical_flow_norm == 0] = 1
+optical_flow = optical_flow/optical_flow_norm[:, None]
+
+
 # display_data3D(data, optical_flow = optical_flow)
+print(count)
 
+print(optical_flow.max(), optical_flow.min(), optical_flow.mean(), optical_flow.std())
 
-image = 255*np.ones((4*row, 4*column, 3))
-for i in range(np.int16(np.max(data[:, 3]))):
-    data_t = data[data[:, 3] == i]
-    optical_flow_t = np.array(optical_flow)[data[:, 3] == i]
+step = 100
+image = 255*np.ones((row, column, 3))
+for i in range(step, 100002, step):
+    # data_t = data[np.int16(data[:, 3]) == i]
+    # print(data_t.shape[0], i, )
+    # optical_flow_t = np.array(optical_flow)[data[:, 3] == i]
+    data_t = data[i-step:i, :]
+    optical_flow_t = np.array(optical_flow)[i-step:i, :]
     if data_t.shape[0] != 0:
         for j in range(data_t.shape[0]):
-            cv2.circle(image, (np.int16(data_t[j, 1]*4), np.int16(data_t[j, 0]*4)), 1, (0, 255, 0), -1)
-            start_point = (np.int16(data_t[j, 1]*4), np.int16(data_t[j, 0]*4))
-            end_point = (np.int16(data_t[j, 1] + optical_flow_t[j, 1])*4, np.int16(data_t[j, 0] + optical_flow_t[j, 0])*4)
-            thickness = 2
+            # cv2.circle(image, (np.int16(data_t[j, 0]), np.int16(data_t[j, 1])), 1, (0, 255, 0), -1)
+            start_point = (np.int16(data_t[j, 0].real), np.int16(data_t[j, 1].real))
+            end_point = (np.int16(data_t[j, 0]+ 15*np.sign(optical_flow_t[j, 0].real)*np.abs(optical_flow_t[j, 0])), np.int16(data_t[j, 1] + 15*np.sign(optical_flow_t[j, 1].real)*np.abs(optical_flow_t[j, 1])))
+            thickness = 1
             tipLength = 0.1
             cv2.arrowedLine(image, start_point, end_point, (255, 0, 0), thickness, tipLength=tipLength)
-
-        cv2.imshow("optical flow", image)
-        cv2.waitKey(100)
-    image = 255*np.ones((4*row, 4*column, 3))
+    
+    cv2.imshow("optical flow", image)
+    cv2.waitKey(-1)
+    image = 255*np.ones((row, column, 3))
