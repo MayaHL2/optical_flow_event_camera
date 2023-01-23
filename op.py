@@ -2,7 +2,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.io import loadmat
 import cv2
-from math import floor
 
 def display_data3D(data, start = 0, stop = 500, optical_flow = None):
     ax = plt.axes(projection='3d')
@@ -14,12 +13,11 @@ def display_data3D(data, start = 0, stop = 500, optical_flow = None):
         ax.quiver(data[start:stop, 0], data[start:stop, 1], data[start:stop, 3], optical_flow[start:stop, 0], optical_flow[start:stop, 1], 0, length = 10, normalize = True)
     plt.show()
 
-annots = loadmat('data/synthetic_square.mat')
-data = annots['data']
+annots = loadmat('data/cropped_tv2.mat')
+data = annots['cropped']
+data = data[:, np.array([0, 1, 3, 2])]
 
-# data = data[:, np.array([0, 1, 3, 2])]
-
-data =  data[:100002, :]
+data =  data[:400002, :]
 
 # annots = loadmat('data/synthetic_square.mat')
 # data = annots['data']
@@ -47,9 +45,9 @@ N = data.shape[0]
 ep = 1000000
 delta = 100000
 
-row = np.int16(data[:, 1].max()) + 1
-column = np.int16(data[:, 0].max()) + 1
-row, column = np.max([row, column]), np.max([row, column])
+row = np.int16(data[:, 0].max()) + 1
+column = np.int16(data[:, 1].max()) + 1
+# row, column = np.max([row, column]), np.max([row, column])
 ev = np.zeros((row, column, 2))
 
 # flow = np.zeros((np.int16(data[:, 1].max()) + 1, np.int16(data[:, 0].max()) + 1, 2, 3))
@@ -76,21 +74,25 @@ for i in range(N):
         fmean = np.sum(f)/Nsamples
         Log = 20/np.log10(fmean)
         Tf = (((Tmax-Tmin)/(Log_max-Log_min))*(Log-Log_min)+Tmin)
-        # Tf = 70000
-        neigh_f = np.array([[(x-1)%row, y%column], [(x+1)%row, y%column], [(x)%row, (y-1)%column], [(x)%row, (y+1)%column]])
-        # print(neigh_f)
-        t_neigh_f = np.min(ev[neigh_f[:, 0], neigh_f[:, 1], :])
+        Tf = 7000000
+        neigh_f = np.array([[x-1, y], [(x+1), y], [(x), (y-1)], [(x), (y+1)]])
+        neigh_f = neigh_f[(neigh_f[:, 0] >= 0) & (neigh_f[:, 0] < row) & (neigh_f[:, 1] >= 0) & (neigh_f[:, 1] < column)]
+        t_neigh_f = np.max(ev[neigh_f[:, 0], neigh_f[:, 1], :])
+        # print(Tf)
         if t - t_neigh_f < Tf:
             flag = 1
             ev[x, y, p] = t
 
     if flag == 1:
         # take the n*n neighborhood
-        neigh = np.array([[x-i, y-j] for i in range(n) for j in range(n)])
+        neigh = np.array([[x-k, y-l] for k in range(-n//2+1, n//2+1) for l in range(-n//2+1, n//2+1)])
+        # delete all neighbors that are out of the image
+        neigh = neigh[(neigh[:, 0] >= 0) & (neigh[:, 0] < row) & (neigh[:, 1] >= 0) & (neigh[:, 1] < column)]
         # find the number of events that are != 0 in the neighborhood
         n_neigh = np.sum(np.logical_or(ev[neigh[:, 0], neigh[:, 1], 0] != 0 , ev[neigh[:, 0], neigh[:, 1], 1] != 0))
         if n_neigh > 3:
-            neigh[np.zeros((n, n, 2)) == ev[neigh[:, 0], neigh[:, 1], :]]
+            logic = np.logical_not(ev[neigh[:, 0], neigh[:, 1], :] == np.zeros((neigh.shape[0], 2)))
+            neigh = neigh[logic[:, 0] | logic[:, 1]]
             mu_x = np.mean(neigh[:, 0])
             mu_y = np.mean(neigh[:, 1])
             mu_t = np.mean(ev[neigh[:, 0], neigh[:, 1], :])
@@ -98,7 +100,7 @@ for i in range(N):
             cov = np.cov(neigh_normalized)
             eig_val, eig_vec = np.linalg.eig(cov)
             V = eig_vec[np.argmin(eig_val)]
-            if eig_vec[0, 0] < ep:
+            if eig_val[0] < ep:
                 # A vérifier si on prend le max ou les deux valeurs
                 d = -(V[0]*neigh[:, 0] + V[1]*neigh[:, 1] + V[2]*np.max(ev[neigh[:, 0], neigh[:, 1], :], axis = 1))
                 t_est = -(V[0]*x + V[1]*y + d)/V[2]
@@ -136,9 +138,9 @@ print(count)
 
 print(optical_flow.max(), optical_flow.min(), optical_flow.mean(), optical_flow.std())
 
-step = 100
+step = 10000
 image = 255*np.ones((row, column, 3))
-for i in range(step, 100002, step):
+for i in range(step, 400002, step):
     # data_t = data[np.int16(data[:, 3]) == i]
     # print(data_t.shape[0], i, )
     # optical_flow_t = np.array(optical_flow)[data[:, 3] == i]

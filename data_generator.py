@@ -21,20 +21,30 @@ for i in range(1, nbr_image):
     synthetic_images[:image_size - stripe_size - i, :, i] = 255
     # synthetic_images[:, :, i] = np.roll(synthetic_images[:, :, i-1], 1, axis=0)
     # synthetic_images[:, :, i] = np.roll(synthetic_images[:, :, i], 1, axis=1)
+    # cv2.imshow("generated", synthetic_images[:, :, i])
+    # cv2.waitKey(10)
+
+# Add noise to random pixels in the image
+for i in range(nbr_image):
+    for j in range(10):
+        x = np.random.randint(0, image_size)
+        y = np.random.randint(0, image_size)
+        synthetic_images[x, y, i] = 255 - synthetic_images[x, y, i]
+
+# display images
+for i in range(nbr_image):
     cv2.imshow("generated", synthetic_images[:, :, i])
     cv2.waitKey(10)
 
-# Add noise
-# synthetic_images = synthetic_images + np.random.normal(0, 10, synthetic_images.shape)
 
 synthetic_events = np.zeros((0, 4))
 
-# for i in range(1, nbr_image):
+for i in range(1, nbr_image):
 
-#     diff_image = synthetic_images[:, :, i] - synthetic_images[:, :, i-1]
-#     changes = np.where(np.abs(diff_image) > delta_p)
-#     new_synthetic_events = np.concatenate((changes[0].reshape(-1, 1), changes[1].reshape(-1, 1), np.sign(diff_image[changes]).reshape(-1, 1), i*delta_t*np.ones((changes[0].shape[0], 1))), axis = 1)
-#     synthetic_events = np.concatenate((synthetic_events, new_synthetic_events), axis = 0)
+    diff_image = synthetic_images[:, :, i] - synthetic_images[:, :, i-1]
+    changes = np.where(np.abs(diff_image) > delta_p)
+    new_synthetic_events = np.concatenate((changes[0].reshape(-1, 1), changes[1].reshape(-1, 1), np.sign(diff_image[changes]).reshape(-1, 1), i*delta_t*np.ones((changes[0].shape[0], 1))), axis = 1)
+    synthetic_events = np.concatenate((synthetic_events, new_synthetic_events), axis = 0)
 
-# print(synthetic_events)
-# savemat('synthetic_stripes.mat', {'data': synthetic_events})
+print(synthetic_events)
+savemat('synthetic_stripes.mat', {'data': synthetic_events})
