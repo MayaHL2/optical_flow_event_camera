@@ -13,14 +13,14 @@ def display_data3D(data, start = 0, stop = 500, optical_flow = None):
         ax.quiver(data[start:stop, 0], data[start:stop, 1], data[start:stop, 3], optical_flow[start:stop, 0], optical_flow[start:stop, 1], 0, length = 10, normalize = True)
     plt.show()
 
-annots = loadmat('data/cropped_tv2.mat')
-data = annots['cropped']
-data = data[:, np.array([0, 1, 3, 2])]
+# annots = loadmat('data/cropped_tv2.mat')
+# data = annots['cropped']
+# data = data[:, np.array([0, 1, 3, 2])]
 
-data =  data[:400002, :]
+# data =  data[:400002, :]
 
-# annots = loadmat('data/synthetic_square.mat')
-# data = annots['data']
+annots = loadmat('data/synthetic_stripes.mat')
+data = annots['data']
 # data = annots['events']
 # data[:, 3] = (data[:, 3]).astype(float)
 # data = data[:2000, :]
@@ -43,7 +43,7 @@ Log_max = 20/np.log10(10000)
 N = data.shape[0]
 
 ep = 1000000
-delta = 100000
+delta = 10000000
 
 row = np.int16(data[:, 0].max()) + 1
 column = np.int16(data[:, 1].max()) + 1
@@ -92,22 +92,36 @@ for i in range(N):
         n_neigh = np.sum(np.logical_or(ev[neigh[:, 0], neigh[:, 1], 0] != 0 , ev[neigh[:, 0], neigh[:, 1], 1] != 0))
         if n_neigh > 3:
             logic = np.logical_not(ev[neigh[:, 0], neigh[:, 1], :] == np.zeros((neigh.shape[0], 2)))
+            logic1 = np.logical_not(ev[neigh[:, 0], neigh[:, 1], 0].reshape(-1, 1) == np.zeros((neigh.shape[0], 1)))
+            logic2 = np.logical_not(ev[neigh[:, 0], neigh[:, 1], 1].reshape(-1, 1) == np.zeros((neigh.shape[0], 1)))
+            neigh1 = neigh[logic1.squeeze(), :]
+            neigh2 = neigh[logic2.squeeze(), :]
             neigh = neigh[logic[:, 0] | logic[:, 1]]
-            mu_x = np.mean(neigh[:, 0])
-            mu_y = np.mean(neigh[:, 1])
-            mu_t = np.mean(ev[neigh[:, 0], neigh[:, 1], :])
-            neigh_normalized = np.column_stack((neigh - np.array([mu_x, mu_y]), np.max(ev[neigh[:, 0], neigh[:, 1], :], axis = 1) - mu_t))
-            cov = np.cov(neigh_normalized)
+            mu_x = np.nanmean([np.mean(neigh1[:, 0]), np.mean(neigh2[:, 0])])
+            mu_y = np.nanmean([np.mean(neigh1[:, 0]), np.mean(neigh2[:, 0])])
+            mu_t = np.nanmean([np.mean(ev[neigh1[:, 0], neigh1[:, 1], :]), np.mean(ev[neigh2[:, 0], neigh2[:, 1], :])])
+            neigh_xy = np.row_stack((neigh1, neigh2))
+            neigh_t = np.row_stack((ev[neigh1[:, 0], neigh1[:, 1], 0].reshape(-1, 1), ev[neigh2[:, 0], neigh2[:, 1], 1].reshape(-1, 1)))
+            neigh_normalized = np.column_stack((neigh_xy - np.array([mu_x, mu_y]), neigh_t - mu_t))
+            cov = np.cov(neigh_normalized.T)
             eig_val, eig_vec = np.linalg.eig(cov)
+            eig_vec = eig_vec[np.argsort(eig_val)]
             V = eig_vec[np.argmin(eig_val)]
+            # V = np.cross(eig_vec[1], eig_vec[2])
             if eig_val[0] < ep:
-                # A vérifier si on prend le max ou les deux valeurs
-                d = -(V[0]*neigh[:, 0] + V[1]*neigh[:, 1] + V[2]*np.max(ev[neigh[:, 0], neigh[:, 1], :], axis = 1))
-                t_est = -(V[0]*x + V[1]*y + d)/V[2]
+                # d = -(V[0]*neigh_xy[:, 0] + V[1]*neigh_xy[:, 1] + V[2]*neigh_t.squeeze())
+                d = -(V[0]*x + V[1]*y + V[2]*t)
+                t_est = -(V[0]*neigh_xy[:, 0] + V[1]*neigh_xy[:, 1] + d)/V[2]
                 if np.sum(np.abs(t_est - t)) < delta:
                     temp = -V[2]/(V[0]**2 + V[1]**2)
                     vx = V[0]*temp
                     vy = V[1]*temp
+                    t_life_time = (V[0]**2 + V[1]**2)/V[2]
+                    if t_life_time > 0:
+                        vx, vy = -vx, -vy
+                    if t_life_time > 40:
+                        vx, vy = 0, 0
+                    print(t_life_time)
                     # print(vx, vy)
                 else:
                     vx = 0
@@ -138,9 +152,9 @@ print(count)
 
 print(optical_flow.max(), optical_flow.min(), optical_flow.mean(), optical_flow.std())
 
-step = 10000
-image = 255*np.ones((row, column, 3))
-for i in range(step, 400002, step):
+step = 100
+image = 255*np.ones((4*row, 4*column, 3))
+for i in range(step, data.shape[0], step):
     # data_t = data[np.int16(data[:, 3]) == i]
     # print(data_t.shape[0], i, )
     # optical_flow_t = np.array(optical_flow)[data[:, 3] == i]
@@ -148,13 +162,13 @@ for i in range(step, 400002, step):
     optical_flow_t = np.array(optical_flow)[i-step:i, :]
     if data_t.shape[0] != 0:
         for j in range(data_t.shape[0]):
-            # cv2.circle(image, (np.int16(data_t[j, 0]), np.int16(data_t[j, 1])), 1, (0, 255, 0), -1)
-            start_point = (np.int16(data_t[j, 0].real), np.int16(data_t[j, 1].real))
-            end_point = (np.int16(data_t[j, 0]+ 15*np.sign(optical_flow_t[j, 0].real)*np.abs(optical_flow_t[j, 0])), np.int16(data_t[j, 1] + 15*np.sign(optical_flow_t[j, 1].real)*np.abs(optical_flow_t[j, 1])))
+            cv2.circle(image, (4*np.int16(data_t[j, 1]), 4*np.int16(data_t[j, 0])), 1, (0, 255, 0), -1)
+            start_point = (4*np.int16(data_t[j, 1].real), 4*np.int16(data_t[j, 0].real))
+            end_point = (4*np.int16(data_t[j, 1]+ 4*np.sign(optical_flow_t[j, 1].real)*np.abs(optical_flow_t[j, 1])), 4*np.int16(data_t[j, 0] + 4*np.sign(optical_flow_t[j, 0].real)*np.abs(optical_flow_t[j, 0])))
             thickness = 1
             tipLength = 0.1
             cv2.arrowedLine(image, start_point, end_point, (255, 0, 0), thickness, tipLength=tipLength)
     
     cv2.imshow("optical flow", image)
     cv2.waitKey(-1)
-    image = 255*np.ones((row, column, 3))
+    image = 255*np.ones((4*row, 4*column, 3))
