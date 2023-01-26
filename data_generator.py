@@ -15,6 +15,10 @@ synthetic_images = np.zeros((image_size, image_size, nbr_image))
 synthetic_images[0:image_size - stripe_size, :, 0] = 255
 # synthetic_images[0:square, :square, 0] = 255
 
+init_image = synthetic_images[:, : , 0]
+height, width = init_image.shape
+video = cv2.VideoWriter('synthetic_stripes.avi',cv2.VideoWriter_fourcc(*'DIVX'), 60, (height, width))
+
 
 for i in range(1, nbr_image):
     synthetic_images[:, :, i] = np.roll(synthetic_images[:, :, i-1], 1, axis=0)
@@ -23,6 +27,10 @@ for i in range(1, nbr_image):
     # synthetic_images[:, :, i] = np.roll(synthetic_images[:, :, i], 1, axis=1)
     cv2.imshow("generated", synthetic_images[:, :, i])
     cv2.waitKey(10)
+
+    video.write(synthetic_images[:, :, i])
+
+video.release()
 
 # Add noise to random pixels in the image
 # for i in range(nbr_image):
@@ -48,3 +56,5 @@ synthetic_events = np.zeros((0, 4))
 
 # print(synthetic_events)
 # savemat('synthetic_stripes.mat', {'data': synthetic_events})
+
+
