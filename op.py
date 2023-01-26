@@ -21,7 +21,7 @@ def display_data3D(data, start = 0, stop = 500, optical_flow = None):
 # step = 10000
 
 # step = 1000
-annots = loadmat('data/synthetic_stripes.mat')
+annots = loadmat('data/synthetic_square.mat')
 data = annots['data']
 # data = annots['events']
 # data[:, 3] = (data[:, 3]).astype(float)
@@ -42,7 +42,7 @@ Nsamples = 10
 Log_min = 20/np.log10(10000000)
 Log_max = 20/np.log10(10000)
 
-T_mask = 100
+T_mask = 15
 
 N = data.shape[0]
 
@@ -144,7 +144,7 @@ for i in range(N):
                     vy = V[1]*temp
                     t_life_time = (V[0]**2 + V[1]**2)/V[2]
                     if t_life_time > 0:
-                        vx, vy = -vx, -vy
+                        vx, vy = -vx, -2*vy
                     if t_life_time > 40:
                         vx, vy = 0, 0
                     # print(t_life_time)
@@ -195,7 +195,7 @@ for i in range(data.shape[0]):
             # image[4*np.int16(data_t[j, 0]): 4*np.int16(data_t[j, 0]) + 4*18, :, : ] = 0
             cv2.circle(image, (4*np.int16(data_t[j, 1]), 4*np.int16(data_t[j, 0])), 1, (0, 255, 0), -1)
             start_point = (4*np.int16(data_t[j, 1].real), 4*np.int16(data_t[j, 0].real))
-            end_point = (4*np.int16(data_t[j, 1]+ 7*np.sign(optical_flow_t[j, 1].real)*np.abs(optical_flow_t[j, 1])), 4*np.int16(data_t[j, 0] + 7*np.sign(optical_flow_t[j, 0].real)*np.abs(optical_flow_t[j, 0])))
+            end_point = (4*np.int16(data_t[j, 1]+ 7*np.sign(optical_flow_t[j, 1].real)*np.abs(optical_flow_t[j, 1])), 4*np.int16(data_t[j, 0] + 7*np.sign(optical_flow_t[j, 0].real)*np.abs(optical_flow_t[j, 0] )))
             thickness = 1
             tipLength = 0.1
             cv2.arrowedLine(image, start_point, end_point, (255, 0, 0), thickness, tipLength=tipLength)
