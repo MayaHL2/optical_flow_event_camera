@@ -1,6 +1,7 @@
 import numpy as np 
 from scipy.io import savemat
 import cv2
+import imageio
 
 delta_p = 10
 delta_t = 10
@@ -28,9 +29,9 @@ for i in range(1, nbr_image):
     cv2.imshow("generated", synthetic_images[:, :, i])
     cv2.waitKey(10)
 
-    video.write(synthetic_images[:, :, i])
+#     video.write(synthetic_images[:, :, i])
 
-video.release()
+# video.release()
 
 # Add noise to random pixels in the image
 # for i in range(nbr_image):
@@ -57,4 +58,4 @@ synthetic_events = np.zeros((0, 4))
 # print(synthetic_events)
 # savemat('synthetic_stripes.mat', {'data': synthetic_events})
 
-
+imageio.mimsave('synthetic_stripes.gif', synthetic_images, 'GIF', duration=0.001)

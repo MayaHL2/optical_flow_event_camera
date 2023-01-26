@@ -20,7 +20,7 @@ def display_data3D(data, start = 0, stop = 500, optical_flow = None):
 # data =  data[:400002, :]
 # step = 10000
 
-step = 100
+# step = 1000
 annots = loadmat('data/synthetic_stripes.mat')
 data = annots['data']
 # data = annots['events']
@@ -34,7 +34,7 @@ data = annots['data']
 ts = 20
 t0 = 1
 
-n = 5
+n = 3
 
 Tmax = 30000
 Tmin = 100
@@ -147,7 +147,7 @@ for i in range(N):
                         vx, vy = -vx, -vy
                     if t_life_time > 40:
                         vx, vy = 0, 0
-                    print(t_life_time)
+                    # print(t_life_time)
                     # print(vx, vy)
                 else:
                     vx = 0
@@ -183,21 +183,23 @@ print(optical_flow.max(), optical_flow.min(), optical_flow.mean(), optical_flow.
 
 
 image = 255*np.ones((4*row, 4*column, 3))
-for i in range(step, data.shape[0], step):
-    # data_t = data[np.int16(data[:, 3]) == i]
+
+for i in range(data.shape[0]):
+    data_t = data[np.int16(data[:, 3]) == i]
     # print(data_t.shape[0], i, )
-    # optical_flow_t = np.array(optical_flow)[data[:, 3] == i]
-    data_t = data[i-step:i, :]
-    optical_flow_t = np.array(optical_flow)[i-step:i, :]
+    optical_flow_t = np.array(optical_flow)[data[:, 3] == i]
+    # data_t = data[i-step:i, :]
+    # optical_flow_t = np.array(optical_flow)[i-step:i, :]
     if data_t.shape[0] != 0:
         for j in range(data_t.shape[0]):
+            # image[4*np.int16(data_t[j, 0]): 4*np.int16(data_t[j, 0]) + 4*18, :, : ] = 0
             cv2.circle(image, (4*np.int16(data_t[j, 1]), 4*np.int16(data_t[j, 0])), 1, (0, 255, 0), -1)
             start_point = (4*np.int16(data_t[j, 1].real), 4*np.int16(data_t[j, 0].real))
-            end_point = (4*np.int16(data_t[j, 1]+ 2*np.sign(optical_flow_t[j, 1].real)*np.abs(optical_flow_t[j, 1])), 4*np.int16(data_t[j, 0] + 2*np.sign(optical_flow_t[j, 0].real)*np.abs(optical_flow_t[j, 0])))
+            end_point = (4*np.int16(data_t[j, 1]+ 7*np.sign(optical_flow_t[j, 1].real)*np.abs(optical_flow_t[j, 1])), 4*np.int16(data_t[j, 0] + 7*np.sign(optical_flow_t[j, 0].real)*np.abs(optical_flow_t[j, 0])))
             thickness = 1
             tipLength = 0.1
             cv2.arrowedLine(image, start_point, end_point, (255, 0, 0), thickness, tipLength=tipLength)
     
-    cv2.imshow("optical flow", image)
-    cv2.waitKey(-1)
-    image = 255*np.ones((4*row, 4*column, 3))
+            cv2.imshow("optical flow", image)
+        cv2.waitKey(-1)
+        image = 255*np.ones((4*row, 4*column, 3))
