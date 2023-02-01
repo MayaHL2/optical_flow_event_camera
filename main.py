@@ -1,14 +1,8 @@
-from scipy.io import loadmat
 import numpy as np
 import matplotlib.pyplot as plt
-import time
+from scipy.io import loadmat
+import cv2
 
-annots = loadmat('data/stripes.mat')
-data = annots['events']
-
-start = time.time()
-
-# Function to display data 
 def display_data3D(data, start = 0, stop = 500, optical_flow = None):
     ax = plt.axes(projection='3d')
     data_p = data[data[:, 2] > 0]
@@ -16,93 +10,196 @@ def display_data3D(data, start = 0, stop = 500, optical_flow = None):
     ax.scatter3D(data_p[start:stop, 0], data_p[start:stop, 1], data_p[start:stop, 3], 'blue')
     ax.scatter3D(data_n[start:stop, 0], data_n[start:stop, 1], data_n[start:stop, 3], 'red')
     if np.all(optical_flow != None):
-        ax.quiver(data[start:stop, 0], data[start:stop, 1], data[start:stop, 3], optical_flow[start:stop, 0], optical_flow[start:stop, 1], optical_flow[start:stop, 2], length = 10, normalize = True)
+        ax.quiver(data[start:stop, 0], data[start:stop, 1], data[start:stop, 3], optical_flow[start:stop, 0], optical_flow[start:stop, 1], 0, length = 10, normalize = True)
     plt.show()
 
+# annots = loadmat('data/cropped_tv2.mat')
+# data = annots['cropped']
+# data = data[:, np.array([0, 1, 3, 2])]
 
-def find_SAE(data, t, x_max, y_max):
-    data_t = data[data[:, 3] < t]
-    SAE = np.zeros((x_max, y_max))
-    for i in range(data_t.shape[0]):
-        if SAE[data_t[i, 0], data_t[i, 1]] < data_t[i, 3]:
-            SAE[data_t[i, 0], data_t[i, 1]] = data_t[i, 3]
-    return SAE
+# data =  data[:400002, :]
+# step = 10000
 
-# Refractory filter
-def refractory_filter(data, T_ref):
-    data_filtered = np.array(data)
-    i = 0
-    while i < np.shape(data)[0]:
-        k = [False]*data_filtered.shape[0]
-        T = T_ref[0]*np.abs(data_filtered[:i, 2] + data_filtered[i, 2])/2 + T_ref[1]*np.abs(data_filtered[:i, 2] - data_filtered[i, 2])/2
-        k[:i] = data_filtered[i, 3] - data_filtered[:i, 3] < T
-        index_filter = np.where(np.logical_and(data_filtered[k, 0] == data_filtered[i, 0], np.any(data_filtered[k, 1] == data_filtered[i, 1])))[0]
-        if len(index_filter) > 0:
-            data_filtered[i, :] = [0, 0, 0, 0]
-        i +=1
-    return np.delete(data_filtered, data_filtered[:, 2] == 0, axis= 0)
+# step = 1000
+annots = loadmat('data/synthetic_square.mat')
+data = annots['data']
+# data = annots['events']
+# data[:, 3] = (data[:, 3]).astype(float)
+# data = data[:2000, :]
 
-def support_time_filter(data, T_support, neighboor_size):
-    data_filtered = np.array(data)
-    i = 0
-    for i in range(1, data_filtered.shape[0]):
-        k = [False]*data_filtered.shape[0]
-        k[:i] = data_filtered[i, 3] - data_filtered[:i, 3] < T_support
-        d = (data_filtered[k, 0] - data_filtered[i, 0])**2 + (data_filtered[k, 1] - data_filtered[i, 1])**2
-        index_filter = np.where(np.logical_and(d <= neighboor_size, d != 0))[0]
-        if len(index_filter) == 0:
-            data_filtered[i, :] = [0, 0, 0, 0]
-    return np.delete(data_filtered, data_filtered[:, 2] == 0, axis= 0)
+# data[data[:, 2] == -1, 2] = 0
 
-def filter_outliers(nbh, n, eps = 0.1):
-    d = -np.sum(n*nbh, axis = 1)
-    t_est = - (np.sum(nbh[:, :2]*n[:2], axis = 1) + d)/n[2]
-    nbh[t_est > (1-eps)*nbh.shape[0]**2/2]
-    return nbh
+# data = np.int16(data)
 
-def PCA(x):
-    x = x - np.mean(x, axis=0)
-    cov = np.cov(x, rowvar=False)
-    _, eig_vec = np.linalg.eig(cov)
-    return eig_vec
+ts = 20
+t0 = 1
 
-def calculate_optical_flow(nbh):
-    eig_vec = PCA(nbh)
-    n = eig_vec[2] 
-    nbh = filter_outliers(nbh, n)
-    if n[2]<0:
-        n = -n
-    temp = -n[2]/(n[0]*n[0] + n[1]*n[1])
-    vx = temp*n[0]
-    vy = temp*n[1]
-    support_time = (n[0]*n[0] + n[1]*n[1])/n[2]
-    return vx, vy, support_time
+n = 7
 
-def optical_flow(data, nbh_size, t_optical_flow):
-    optical_flow_data = np.zeros((data.shape[0], 3))
-    for i in range(1, data.shape[0]):
-        k = np.array([False]*data.shape[0])
-        k[i:] = data[i:, 3] - data[i, 3] < t_optical_flow
-        k[:i] = np.array([True]*i)
-        d = np.array([False]*data.shape[0])
-        d[k] = (data[k, 0] - data[i, 0])**2 + (data[k, 1] - data[i, 1])**2 + (data[k, 3] - data[i, 3])**2 < np.floor(nbh_size/2)*np.floor(nbh_size/2)*2 + t_optical_flow**2
-        nbh = data[d]
-        nbh = nbh[:, np.array([0, 1, 3])]
-        if d.sum() > 3:
-            vx, vy, support_time = calculate_optical_flow(nbh)
-            optical_flow_data[i, :] = [vx, vy, support_time]
-    return optical_flow_data
+Tmax = 30000
+Tmin = 100
+Nsamples = 10
+Log_min = 20/np.log10(10000000)
+Log_max = 20/np.log10(10000)
+
+T_mask = 15
+
+N = data.shape[0]
+
+ep = 1000000
+delta = 10000000
+
+row = np.int16(data[:, 0].max()) + 1
+column = np.int16(data[:, 1].max()) + 1
+# row, column = np.max([row, column]), np.max([row, column])
+ev = np.zeros((row, column, 2, 3))
+
+# flow = np.zeros((np.int16(data[:, 1].max()) + 1, np.int16(data[:, 0].max()) + 1, 2, 3))
+
+optical_flow = []
+count = 0
+
+time_pos = 0
+
+for i in range(N):
+    value = 0
+    flag = 0
+    x, y, p, t = data[i, :]
+    x = np.int16(x)
+    y = np.int16(y)
+    p = np.int16(p)
+    p0 = 1 - p 
+    # (t - ev[x, y, p] < ts) or (t - ev[x, y, p0] < t0)
+    if True:
+        timing = data[i:i+Nsamples, 3]
+        t1 = timing[1:]/1000000
+        t2 = timing[:-1]/1000000
+        t_supp = t1-t2
+        t_supp = t_supp[t_supp!=0] # to avoid infinities
+        f = 1/t_supp
+        fmean = np.sum(f)/Nsamples
+        Log = 20/np.log10(fmean)
+        Tf = (((Tmax-Tmin)/(Log_max-Log_min))*(Log-Log_min)+Tmin)
+        Tf = 7000000
+        neigh_f = np.array([[x-1, y], [(x+1), y], [(x), (y-1)], [(x), (y+1)]])
+        neigh_f = neigh_f[(neigh_f[:, 0] >= 0) & (neigh_f[:, 0] < row) & (neigh_f[:, 1] >= 0) & (neigh_f[:, 1] < column)]
+        t_neigh_f = np.max(ev[neigh_f[:, 0], neigh_f[:, 1], :, :])
+        # print(Tf)
+        if t - t_neigh_f < Tf:
+            flag = 1
+            ev[x, y, p, time_pos] = t
+            time_pos = (time_pos + 1) % 3
+
+    if flag == 1:
+        # take the n*n neighborhood
+        neigh = np.array([[x-k, y-l] for k in range(-n//2+1, n//2+1) for l in range(-n//2+1, n//2+1)])
+        # delete all neighbors that are out of the image
+        neigh = neigh[(neigh[:, 0] >= 0) & (neigh[:, 0] < row) & (neigh[:, 1] >= 0) & (neigh[:, 1] < column)]
+        # find the number of events that are != 0 in the neighborhood
+        n_neigh = np.sum(np.logical_or(ev[neigh[:, 0], neigh[:, 1], 0, :] != 0 , ev[neigh[:, 0], neigh[:, 1], 1, :] != 0))
+        # print(n_neigh)
+        if n_neigh > 3:
+            logic1 = dict()
+            logic2 = dict()
+            neigh1 = dict()
+            neigh2 = dict()
+
+            mu_x = 0
+            mu_y = 0
+            mu_t = 0
+
+            neigh_xy = np.zeros((0, 2))
+            neigh_t = np.zeros((0, 1))
+
+            for time_pos_i in range(3):
+                logic1[str(time_pos_i)] = np.logical_not(ev[neigh[:, 0], neigh[:, 1], 0, time_pos_i].reshape(-1, 1) == np.zeros((neigh.shape[0], 1)))
+                logic2[str(time_pos_i)] = np.logical_not(ev[neigh[:, 0], neigh[:, 1], 1, time_pos_i].reshape(-1, 1) == np.zeros((neigh.shape[0], 1)))
+                neigh1[str(time_pos_i)] = neigh[logic1[str(time_pos_i)].squeeze(), :]
+                neigh2[str(time_pos_i)] = neigh[logic2[str(time_pos_i)].squeeze(), :]
+                # print(neigh1[str(time_pos_i)].shape, neigh2[str(time_pos_i)].shape)
+                if neigh1[str(time_pos_i)].shape[0] > 0 or neigh2[str(time_pos_i)].shape[0] > 0:
+                    mu_x += np.nanmean([np.mean(neigh1[str(time_pos_i)][:, 0]), np.mean(neigh2[str(time_pos_i)][:, 0])])
+                    mu_y += np.nanmean([np.mean(neigh1[str(time_pos_i)][:, 0]), np.mean(neigh2[str(time_pos_i)][:, 0])])
+                    mu_t += np.nanmean([np.mean(ev[neigh1[str(time_pos_i)][:, 0], neigh1[str(time_pos_i)][:, 1], :, :]), np.mean(ev[neigh2[str(time_pos_i)][:, 0], neigh2[str(time_pos_i)][:, 1], :, :])])
+
+                    neigh_xy = np.row_stack((neigh_xy, np.row_stack((neigh1[str(time_pos_i)], neigh2[str(time_pos_i)]))))
+                    neigh_t = np.row_stack((neigh_t, np.row_stack((ev[neigh1[str(time_pos_i)][:, 0], neigh1[str(time_pos_i)][:, 1], 0, time_pos_i].reshape(-1, 1), ev[neigh2[str(time_pos_i)][:, 0], neigh2[str(time_pos_i)][:, 1], 1, time_pos_i].reshape(-1, 1)))))
+            
+            mu_x = mu_x/3
+            mu_y = mu_y/3
+            mu_t = mu_t/3
+            neigh_normalized = np.column_stack((neigh_xy - np.array([mu_x, mu_y]), neigh_t - mu_t))
+            cov = np.cov(neigh_normalized.T)
+            eig_val, eig_vec = np.linalg.eig(cov)
+            eig_vec = eig_vec[np.argsort(eig_val)]
+            V = eig_vec[np.argmin(eig_val)]
+            # V = np.cross(eig_vec[1], eig_vec[2])
+            if eig_val[0] < ep:
+                # d = -(V[0]*neigh_xy[:, 0] + V[1]*neigh_xy[:, 1] + V[2]*neigh_t.squeeze())
+                d = -(V[0]*x + V[1]*y + V[2]*t)
+                t_est = -(V[0]*neigh_xy[:, 0] + V[1]*neigh_xy[:, 1] + d)/V[2]
+                if np.sum(np.abs(t_est - t)) < delta:
+                    temp = -V[2]/(V[0]**2 + V[1]**2)
+                    vx = V[0]*temp
+                    vy = V[1]*temp
+                    t_life_time = (V[0]**2 + V[1]**2)/V[2]
+                    if t_life_time > 0:
+                        vx, vy = -vx, -2*vy
+                    if t_life_time > 40:
+                        vx, vy = 0, 0
+                    # print(t_life_time)
+                    # print(vx, vy)
+                else:
+                    vx = 0
+                    vy = 0
+            else:
+                vx = 0
+                vy = 0
+        else:
+            vx = 0
+            vy = 0
+        
+
+        value = 1
+        optical_flow.append([vx, vy])
+        count += 1
+
+    if value == 0:
+        optical_flow.append([0, 0])
+
+    # put to 0 the values of ev that are not between t - T and t + T
+    ev[ev < t - T_mask] = 0
+    ev[ev > t + T_mask] = 0
+
+optical_flow = np.array(optical_flow)
+optical_flow_norm = np.linalg.norm(optical_flow, axis = 1)
+optical_flow_norm[optical_flow_norm == 0] = 1
+optical_flow = optical_flow/optical_flow_norm[:, None]
+
+
+# display_data3D(data, optical_flow = optical_flow)
+print(count)
+print(optical_flow.max(), optical_flow.min(), optical_flow.mean(), optical_flow.std())
+
+
+image = 255*np.ones((4*row, 4*column, 3))
+
+for i in range(data.shape[0]):
+    data_t = data[np.int16(data[:, 3]) == i]
+    # print(data_t.shape[0], i, )
+    optical_flow_t = np.array(optical_flow)[data[:, 3] == i]
+    # data_t = data[i-step:i, :]
+    # optical_flow_t = np.array(optical_flow)[i-step:i, :]
+    if data_t.shape[0] != 0:
+        for j in range(data_t.shape[0]):
+            # image[4*np.int16(data_t[j, 0]): 4*np.int16(data_t[j, 0]) + 4*18, :, : ] = 0
+            cv2.circle(image, (4*np.int16(data_t[j, 1]), 4*np.int16(data_t[j, 0])), 1, (0, 255, 0), -1)
+            start_point = (4*np.int16(data_t[j, 1].real), 4*np.int16(data_t[j, 0].real))
+            end_point = (4*np.int16(data_t[j, 1]+ 7*np.sign(optical_flow_t[j, 1].real)*np.abs(optical_flow_t[j, 1])), 4*np.int16(data_t[j, 0] + 7*np.sign(optical_flow_t[j, 0].real)*np.abs(optical_flow_t[j, 0] )))
+            thickness = 1
+            tipLength = 0.1
+            cv2.arrowedLine(image, start_point, end_point, (255, 0, 0), thickness, tipLength=tipLength)
     
-# data = data[np.logical_and(data[:, 3] > 500, data[:, 3] < 1000)]
-
-# data_filtered = refractory_filter(data[:100, :], [20, 1])
-# optical_flow_data = optical_flow(data_filtered, 9, 50)
-# display_data3D(data_filtered, 0, 100, optical_flow_data)
-# print(data[:100, :])
-
-# Check if data happened at the same time 
-def check_same_time(data):
-    for i in range(data.shape[0]):
-        for j in range(i+1, data.shape[0]):
-            if data[i, 3] == data[j, 3]:
-                print(i, j)
+            cv2.imshow("optical flow", image)
+        cv2.waitKey(-1)
+        image = 255*np.ones((4*row, 4*column, 3))
